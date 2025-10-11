@@ -67,7 +67,15 @@ class SpeechToTextTranscriber:
         return audio
 
     def _normalize_audio(self, audio: np.ndarray) -> np.ndarray:
-        return np.clip(np.nan_to_num(audio), -1.0, 1.0)
+        """Normalize and boost audio volume"""
+        audio = np.nan_to_num(audio)
+
+        # Auto-gain: normalize to use full dynamic range
+        max_val = np.abs(audio).max()
+        if max_val > 0:
+            audio = audio / max_val * 0.9  # Scale to 90% to avoid clipping
+
+        return np.clip(audio, -1.0, 1.0)
 
     def _resample_to_16k(self, audio: np.ndarray, orig_sample_rate: int) -> np.ndarray:
         """Resample audio to 16kHz if needed"""
