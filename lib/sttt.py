@@ -13,7 +13,7 @@ SAMPLE_RATE = 16000
 FALLBACK_SAMPLE_RATES = [16000, 44100, 48000, 8000]  # Try these in order
 CHANNELS = 1 # Asking for mono
 AUDIO_DTYPE = "float32"  # Audio data type for consistency between input and model
-VAD_THRESHOLD = 0.01 # Energy threshold for voice activity detection (higher = more selective)
+VAD_THRESHOLD = 0.00025 # Energy threshold for voice activity detection (higher = more selective)
 SILENCE_THRESHOLD_MS = 800 # Silence threshold in milliseconds
 MIN_AUDIO_DURATION_SECONDS = 0.5 # Minimum audio length to process
 
@@ -128,7 +128,14 @@ class SpeechToTextTranscriber:
                     continue
 
                 buffer.append(data)
+                energy = float(np.mean(np.abs(data)))
+
+                if len(buffer) % 10 == 0:
+                    print(f"Energy: {energy:.6f}, Threshold: {self.vad_threshold:.6f}")
+                
                 if self._is_voice(data):
+                    if last_voice_time is None:
+                        print(f"Voice detected! (energy: {energy:.6f})")
                     last_voice_time = time.monotonic()
 
                 # Only check for silence after we've detected voice at least once
@@ -141,11 +148,14 @@ class SpeechToTextTranscriber:
 
                         # Only process if we have enough audio duration
                         if self._is_min_duration(audio):
+                            print(f"Processing {len(audio)/working_sample_rate:.2f}s of audio...")
                             buffer.clear()
                             last_voice_time = None  # Reset voice detection after processing
                             text = self._process_audio_segment(audio, working_sample_rate)
                             if text and len(text.strip()) > 0:
                                 transcription_callback(text)
+                            else:
+                                print(f"No transcription result (got: '{text}')")
                         # Otherwise keep accumulating audio in buffer
 
 

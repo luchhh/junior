@@ -74,6 +74,10 @@ def main():
     print("VERSION 0.1")
     args = parse_arguments()
 
+    # Initialize firmware
+    fw.start()
+    print("🤖 Firmware initialized!")
+
     # Create transcriber instance
     transcriber = SpeechToTextTranscriber(args.model, args.language, args.vad_threshold)
 
