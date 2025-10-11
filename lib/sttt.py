@@ -6,9 +6,11 @@ from typing import Optional
 import numpy as np
 import sounddevice as sd
 from faster_whisper import WhisperModel
+from scipy import signal
 
 
 SAMPLE_RATE = 16000
+FALLBACK_SAMPLE_RATES = [16000, 44100, 48000, 8000]  # Try these in order
 CHANNELS = 1 # Asking for mono
 AUDIO_DTYPE = "float32"  # Audio data type for consistency between input and model
 VAD_THRESHOLD = 0.01 # Energy threshold for voice activity detection (higher = more selective)
@@ -67,9 +69,17 @@ class SpeechToTextTranscriber:
     def _normalize_audio(self, audio: np.ndarray) -> np.ndarray:
         return np.clip(np.nan_to_num(audio), -1.0, 1.0)
 
-    def _process_audio_segment(self, audio: np.ndarray) -> Optional[str]:
+    def _resample_to_16k(self, audio: np.ndarray, orig_sample_rate: int) -> np.ndarray:
+        """Resample audio to 16kHz if needed"""
+        if orig_sample_rate == 16000:
+            return audio
+        num_samples = int(len(audio) * 16000 / orig_sample_rate)
+        return signal.resample(audio, num_samples)
+
+    def _process_audio_segment(self, audio: np.ndarray, orig_sample_rate: int) -> Optional[str]:
         mono = self._ensure_mono(audio)
         mono = self._normalize_audio(mono)
+        mono = self._resample_to_16k(mono, orig_sample_rate)
 
         try:
             segments, _ = self.model.transcribe(mono, beam_size=1, vad_filter=True, language=self.language)
@@ -79,6 +89,18 @@ class SpeechToTextTranscriber:
             print(f"Transcription error: {e}", file=sys.stderr)
             return None
 
+    def _get_working_sample_rate(self, device: int = 0) -> int:
+        """Find a working sample rate for the device"""
+        for rate in FALLBACK_SAMPLE_RATES:
+            try:
+                sd.check_input_settings(device=device, channels=CHANNELS, samplerate=rate, dtype=AUDIO_DTYPE)
+                if rate != SAMPLE_RATE:
+                    print(f"Using sample rate {rate}Hz (device doesn't support {SAMPLE_RATE}Hz)")
+                return rate
+            except sd.PortAudioError:
+                continue
+        raise RuntimeError(f"No supported sample rate found for device {device}")
+
     def call(self, transcription_callback):
         """
         Start real-time transcription from microphone
@@ -86,13 +108,16 @@ class SpeechToTextTranscriber:
         """
         print("Listening... Press Ctrl+C to stop.")
 
-        audio_stream = AudioStream(self.sample_rate)
+        # Find working sample rate for device
+        working_sample_rate = self._get_working_sample_rate(device=0)
+        audio_stream = AudioStream(working_sample_rate)
         buffer: list[np.ndarray] = []
         last_voice_time: Optional[float] = None
 
         with sd.InputStream(
+            device=0,  # Use first USB microphone (hw:0,0)
             channels=CHANNELS,
-            samplerate=self.sample_rate,
+            samplerate=working_sample_rate,
             dtype=AUDIO_DTYPE,
             callback=audio_stream.callback,
         ):
@@ -118,7 +143,7 @@ class SpeechToTextTranscriber:
                         if self._is_min_duration(audio):
                             buffer.clear()
                             last_voice_time = None  # Reset voice detection after processing
-                            text = self._process_audio_segment(audio)
+                            text = self._process_audio_segment(audio, working_sample_rate)
                             if text and len(text.strip()) > 0:
                                 transcription_callback(text)
                         # Otherwise keep accumulating audio in buffer
