@@ -4,7 +4,11 @@ from lib.gpt import chat
 from pathlib import Path
 import argparse
 import sys
+import json
 from lib.sttt import SpeechToTextTranscriber, VAD_THRESHOLD
+from models import Command, MovementCommand, SpeakCommand, CommandList
+from pydantic import ValidationError
+import lib.firmware as fw
 
 def load_system_prompt() -> str:
     """Load the robot system prompt from prompts/system.md"""
@@ -14,12 +18,46 @@ def load_system_prompt() -> str:
     return system_path.read_text(encoding="utf-8").strip()
 
 
-def process_transcription_with_chat(transcribed_text: str, system_prompt: str) -> None:
-    """Send transcribed text to chat and print the response"""
+def execute_command(cmd: Command) -> None:
+    """Execute a single robot command"""
+    if isinstance(cmd, MovementCommand):
+        sec = cmd.ms / 1000.0  # Convert milliseconds to seconds
+        match cmd.command:
+            case "forward":
+                fw.forward(sec)
+            case "backward":
+                fw.reverse(sec)
+            case "left":
+                fw.left_turn(sec)
+            case "right":
+                fw.right_turn(sec)
+    elif isinstance(cmd, SpeakCommand):
+        print(f"🗣️  Speaking: {cmd.body}")  # TODO: Implement speech
+
+
+def process_transcription(transcribed_text: str, system_prompt: str) -> None:
+    """Send transcribed text to chat and execute robot commands"""
     try:
         print(f"🎤 Transcribed: {transcribed_text}")
         response = chat(system_prompt, transcribed_text)
-        print(f"🤖 Robot response: {response}")
+        print(f"🤖 GPT response: {response}")
+
+        # Parse JSON response into CommandList
+        response_json = json.loads(response)
+        commands = CommandList(root=response_json).root
+
+        print(f"🤖 Robot commands: {len(commands)} action(s)")
+        for cmd in commands:
+            if isinstance(cmd, MovementCommand):
+                print(f"  → {cmd.command}: {cmd.ms}ms")
+            elif isinstance(cmd, SpeakCommand):
+                print(f"  → speak: {cmd.body}")
+            execute_command(cmd)
+
+    except json.JSONDecodeError as e:
+        print(f"❌ Invalid JSON response: {e}", file=sys.stderr)
+    except ValidationError as e:
+        print(f"❌ Invalid command format: {e}", file=sys.stderr)
     except Exception as e:
         print(f"❌ Chat error: {e}", file=sys.stderr)
 
@@ -39,17 +77,12 @@ def main():
     # Create transcriber instance
     transcriber = SpeechToTextTranscriber(args.model, args.language, args.vad_threshold)
 
-
     # Load system prompt for robot commands
     system_prompt = load_system_prompt()
     print("🤖 Robot system loaded!")
 
-    # Define callback function for transcription results
-    def on_transcription(text: str):
-        process_transcription_with_chat(text, system_prompt)
-
     try:
-        transcriber.call(on_transcription)
+        transcriber.call(lambda text: process_transcription(text, system_prompt))
     except KeyboardInterrupt:
         print("\nStopped by user.")
 
