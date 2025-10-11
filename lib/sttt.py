@@ -161,18 +161,19 @@ class SpeechToTextTranscriber:
 
                     if silence_after_voice_ms >= SILENCE_THRESHOLD_MS:
                         audio = np.concatenate(buffer)
+                        buffer.clear()  # Always clear buffer after silence
+                        last_voice_time = None  # Reset voice detection
 
                         # Only process if we have enough audio duration
                         if self._is_min_duration(audio):
                             print(f"Processing {len(audio)/working_sample_rate:.2f}s of audio...")
-                            buffer.clear()
-                            last_voice_time = None  # Reset voice detection after processing
                             text = self._process_audio_segment(audio, working_sample_rate)
                             if text and len(text.strip()) > 0:
                                 transcription_callback(text)
                             else:
                                 print(f"No transcription result (got: '{text}')")
-                        # Otherwise keep accumulating audio in buffer
+                        else:
+                            print(f"Audio too short ({len(audio)/working_sample_rate:.2f}s), discarded")
 
 
 
