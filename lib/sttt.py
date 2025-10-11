@@ -84,6 +84,11 @@ class SpeechToTextTranscriber:
         mono = self._normalize_audio(mono)
         mono = self._resample_to_16k(mono, orig_sample_rate)
 
+        # Debug: save audio sample
+        import soundfile as sf
+        sf.write('/tmp/debug_audio.wav', mono, 16000)
+        print(f"Saved debug audio to /tmp/debug_audio.wav (shape: {mono.shape}, min: {mono.min():.4f}, max: {mono.max():.4f})")
+
         try:
             segments, _ = self.model.transcribe(mono, beam_size=1, vad_filter=True, language=self.language)
             text = "".join(s.text for s in segments).strip()
