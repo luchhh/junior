@@ -13,7 +13,7 @@ SAMPLE_RATE = 16000
 FALLBACK_SAMPLE_RATES = [16000, 44100, 48000, 8000]  # Try these in order
 CHANNELS = 1 # Asking for mono
 AUDIO_DTYPE = "float32"  # Audio data type for consistency between input and model
-VAD_THRESHOLD = 0.00025 # Energy threshold for voice activity detection (higher = more selective)
+VAD_THRESHOLD = 0.00035 # Energy threshold for voice activity detection (higher = more selective)
 SILENCE_THRESHOLD_MS = 800 # Silence threshold in milliseconds
 MIN_AUDIO_DURATION_SECONDS = 0.5 # Minimum audio length to process
 
@@ -73,8 +73,11 @@ class SpeechToTextTranscriber:
         """Resample audio to 16kHz if needed"""
         if orig_sample_rate == 16000:
             return audio
-        num_samples = int(len(audio) * 16000 / orig_sample_rate)
-        return signal.resample(audio, num_samples)
+        # Use resample_poly for better quality (anti-aliasing filter)
+        # 44100 -> 16000 requires downsampling by 16000/44100 = 160/441
+        from fractions import Fraction
+        ratio = Fraction(16000, orig_sample_rate)
+        return signal.resample_poly(audio, ratio.numerator, ratio.denominator)
 
     def _process_audio_segment(self, audio: np.ndarray, orig_sample_rate: int) -> Optional[str]:
         mono = self._ensure_mono(audio)
