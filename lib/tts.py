@@ -66,8 +66,9 @@ def speak(text: str, voice: str = "alloy", audio_device: int = 3) -> None:
         response.stream_to_file(speech_file)
 
         # Play using aplay to specific device
+        # Use plughw instead of hw for automatic format conversion
         subprocess.run(
-            ["aplay", "-D", f"hw:{audio_device},0", str(speech_file)],
+            ["aplay", "-D", f"plughw:{audio_device},0", str(speech_file)],
             check=True,
             capture_output=True
         )
