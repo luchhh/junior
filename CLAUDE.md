@@ -4,14 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a Python-based robot control system for "junior", a physical robot car that can be controlled via speech-to-text commands. The system runs on Raspberry Pi 5 (8GB RAM) and consists of the following components:
+This is a Python-based robot control system for "junior", a physical robot car that can be controlled via speech-to-text commands. The system runs on Raspberry Pi 5 (8GB RAM) and supports both local (Whisper) and cloud (GPT-4o Audio) transcription modes. Components:
 
-1. **Main Application** (`chat.py`) - Integrates STT, GPT, and firmware to provide voice-controlled robot operation
-2. **Speech-to-Text Module** (`lib/sttt.py`) - Real-time microphone transcription using faster-whisper with optimizations for Raspberry Pi
-3. **GPT Integration** (`lib/gpt.py`) - OpenAI GPT client for converting natural language to structured robot commands
-4. **Firmware Control** (`lib/firmware/`) - GPIO-based motor control for Raspberry Pi 5
-5. **Command Models** (`models.py`) - Pydantic models for validated robot commands
-6. **Utilities** (`scripts/`) - Helper scripts for testing (transcription, recording, text-based GPT)
+1. **Main Application** (`chat.py`) - Orchestrates voice control with dual-mode support: local Whisper or cloud GPT-4o Audio transcription
+2. **Audio Capture** (`lib/audio_capture.py`) - Pure audio capture service with VAD, independent of transcription backend
+3. **Speech-to-Text Module** (`lib/sttt.py`) - Local transcription using AudioCapture + faster-whisper, optimized for Raspberry Pi 5
+4. **GPT Integration** (`lib/gpt.py`) - OpenAI client supporting both text chat and audio input for command generation
+5. **Firmware Control** (`lib/firmware/`) - GPIO-based motor control for Raspberry Pi 5
+6. **Command Models** (`models.py`) - Pydantic models for validated robot commands
+7. **Utilities** (`scripts/`) - Helper scripts for testing (transcription, recording, text-based GPT)
 
 ## Commands
 
@@ -26,8 +27,11 @@ cp .env.example .env  # if available, or create .env with OPENAI_API_KEY
 
 ### Running the System
 ```bash
-# Main voice-controlled robot (recommended - runs STT + GPT + firmware)
-python chat.py --model small --language en
+# RECOMMENDED: Cloud transcription (fast, accurate, requires API key)
+python chat.py --cloud --language en         # ~1.5s total latency
+
+# Local transcription (slower, private, no API costs)
+python chat.py --model small --language en   # ~8.5s total latency
 
 # Testing utilities
 python scripts/transcribe.py --model small --language en  # STT only
@@ -40,15 +44,17 @@ python scripts/textgpt.py --user "move forward 50 centimeters"  # GPT only (no S
 # List available audio devices
 python scripts/record_mic.py --list
 
-# Test different Whisper models
-python chat.py --model tiny --language en     # ~2-3s transcription, lower accuracy
-python chat.py --model small --language en    # ~7s transcription, good accuracy (recommended)
+# Cloud mode (GPT-4o Audio API)
+python chat.py --cloud --language en                     # Fast, ~1.5s total latency
+python chat.py --cloud --vad-threshold 0.003 --language en  # Adjust sensitivity
+
+# Local mode (Whisper on Raspberry Pi)
+python chat.py --model tiny --language en     # ~3s transcription, lower accuracy
+python chat.py --model small --language en    # ~7s transcription, good accuracy
 python chat.py --model medium --language en   # >15s transcription, best accuracy
+python chat.py --vad-threshold 0.0035 --language en  # Adjust VAD sensitivity
 
-# Adjust VAD threshold (lower = more sensitive to quiet speech)
-python chat.py --vad-threshold 0.0035 --language en
-
-# Change OpenAI model
+# Text-only GPT testing
 python scripts/textgpt.py --user "turn left 90 degrees" --model gpt-4o
 ```
 
@@ -56,11 +62,15 @@ python scripts/textgpt.py --user "turn left 90 degrees" --model gpt-4o
 
 ### Core Components
 
-- **`chat.py`**: Main application that orchestrates the complete voice control loop. Initializes firmware, creates STT transcriber, loads robot system prompt, and processes transcriptions through GPT to execute robot commands.
+- **`chat.py`**: Main application with dual-mode architecture. Supports both local (Whisper) and cloud (GPT-4o Audio) transcription. Orchestrates the complete voice control loop: audio capture → transcription → GPT command generation → firmware execution.
 
-- **`lib/sttt.py`**: Speech-to-text module with `SpeechToTextTranscriber` class. Handles real-time audio capture, VAD (Voice Activity Detection), audio preprocessing (resampling, normalization), and faster-whisper integration. Optimized for Raspberry Pi 5 with INT8 quantization and multi-threaded CPU inference.
+- **`lib/audio_capture.py`**: Pure audio capture service with `AudioCapture` class. Handles microphone input, VAD (Voice Activity Detection), speech segmentation, and audio preprocessing (mono conversion, normalization, 16kHz resampling). Independent of transcription backend - used by both local and cloud modes.
 
-- **`lib/gpt.py`**: OpenAI GPT client wrapper for converting natural language to structured JSON robot commands.
+- **`lib/sttt.py`**: Local speech-to-text using `SpeechToTextTranscriber` class. Composes `AudioCapture` with faster-whisper for on-device transcription. Optimized for Raspberry Pi 5 with INT8 quantization and 4-thread CPU inference.
+
+- **`lib/gpt.py`**: OpenAI client with two functions:
+  - `chat(system_prompt, user_message)` - Text-based GPT chat for local transcription mode
+  - `chat_with_audio(system_prompt, audio_file_path)` - GPT-4o Audio API for cloud transcription mode
 
 - **`lib/firmware/__init__.py`**: Motor control via GPIO pins using lgpio library (Raspberry Pi 5 compatible). Provides `forward()`, `reverse()`, `left_turn()`, `right_turn()` functions with duration and power control.
 
@@ -76,15 +86,27 @@ The system uses a structured JSON command format defined in `prompts/system.md`.
 - **Speech command**: `speak` with text body
 - **Robot specifications**: 15x30x10 cm, 10 cm/s linear speed, 30°/s rotation speed
 
-### Audio Processing Pipeline
+### Audio Processing Pipelines
 
-1. **Audio Input**: Continuous microphone capture (device auto-selects 44100Hz or 16kHz based on hardware support)
-2. **VAD Processing**: Energy-based voice activity detection (threshold: 0.0035). Buffer only accumulates audio **after** voice is detected to improve transcription quality
-3. **Segmentation**: Speech segments detected after 800ms of silence following voice activity
-4. **Preprocessing**: Audio is converted to mono, normalized to 90% dynamic range, and resampled to 16kHz using high-quality polyphase resampling
-5. **Transcription**: faster-whisper model (INT8 quantized, 4 CPU threads) processes audio segments. Expected performance on Raspberry Pi 5: ~7 seconds for ~1.7s of speech with small model
-6. **GPT Processing**: Transcribed text sent to OpenAI GPT which returns structured JSON commands
-7. **Execution**: Commands validated via Pydantic models and executed through firmware layer
+#### Local Mode (Whisper):
+1. **Audio Capture**: Continuous microphone monitoring via `AudioCapture` (auto-selects 44100Hz or 16kHz)
+2. **VAD Processing**: Energy-based detection (threshold: 0.0035). Buffer accumulates only **after** voice detected
+3. **Segmentation**: Speech segments captured after 800ms silence
+4. **Preprocessing**: Mono conversion, normalization (90% dynamic range), resampling to 16kHz
+5. **Transcription**: Local faster-whisper (INT8, 4 CPU threads) → ~7s for 1.7s audio
+6. **GPT Text API**: Transcribed text → GPT-4o-mini → JSON commands (~1s)
+7. **Execution**: Pydantic validation → firmware execution
+   - **Total latency: ~8.5 seconds**
+
+#### Cloud Mode (GPT-4o Audio):
+1. **Audio Capture**: Same `AudioCapture` service as local mode
+2. **VAD Processing**: Same energy-based detection
+3. **Segmentation**: Same 800ms silence threshold
+4. **Preprocessing**: Same mono/normalize/resample pipeline
+5. **Audio File**: Save preprocessed audio to `/tmp/robot_command.wav`
+6. **GPT Audio API**: Audio file → GPT-4o Audio API → JSON commands (~1s)
+7. **Execution**: Pydantic validation → firmware execution
+   - **Total latency: ~1.5 seconds** (6x faster!)
 
 ## Dependencies
 
@@ -112,7 +134,18 @@ The system uses a structured JSON command format defined in `prompts/system.md`.
 
 ## Performance Notes
 
-- **Raspberry Pi 5 Benchmarks**: Transcription time with small model is ~7 seconds for ~1.7s of speech. This is normal for CPU-based inference and matches published benchmarks for Pi 5.
-- **Real-time limitations**: The small model cannot process audio faster than real-time on Pi 5, but this is acceptable for command-based control where accuracy matters more than latency.
-- **Optimization applied**: INT8 quantization, multi-threaded inference, disabled redundant VAD filtering, optimized audio buffering.
-- **ALSA mixer configuration**: Microphone capture volume should be set to 100% via `amixer sset Capture 100%` for optimal audio levels.
+### Local Mode (Whisper on Pi 5)
+- **Transcription time**: ~7 seconds for ~1.7s of speech (normal for CPU inference, matches published Pi 5 benchmarks)
+- **Total latency**: ~8.5 seconds (transcription + GPT API)
+- **Optimizations**: INT8 quantization, 4-thread CPU inference, disabled redundant VAD filtering, optimized audio buffering
+- **Trade-offs**: Slower but free, private, works offline
+
+### Cloud Mode (GPT-4o Audio)
+- **Total latency**: ~1.5 seconds (6x faster than local!)
+- **API costs**: ~$0.006/minute of audio (~$0.01 per typical 1.7s command)
+- **Trade-offs**: Fast and accurate but requires API key, internet connection, and incurs per-use costs
+
+### System Configuration
+- **ALSA mixer**: Set mic volume to 100% via `amixer sset Capture 100%` for optimal audio levels
+- **VAD threshold**: 0.0035 default (adjust with `--vad-threshold` for different environments)
+- **Silence threshold**: 800ms (optimal for command-based interaction)
