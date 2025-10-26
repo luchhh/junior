@@ -7,6 +7,7 @@ import argparse
 import sys
 import json
 from datetime import datetime
+import numpy as np
 import soundfile as sf
 from lib.sttt import SpeechToTextTranscriber
 from models import Command, MovementCommand, SpeakCommand, CommandList
@@ -76,7 +77,7 @@ def process_transcription(transcribed_text: str, system_prompt: str) -> None:
         print(f"❌ Chat error: {e}", file=sys.stderr)
 
 
-def process_audio(audio: any, sample_rate: int, system_prompt: str) -> None:
+def process_audio(audio: np.ndarray, sample_rate: int, system_prompt: str) -> None:
     """Send audio directly to GPT for transcription + command generation"""
     try:
         # Save audio to temp file
