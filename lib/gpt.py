@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 from openai import OpenAI
 
@@ -23,6 +24,49 @@ def chat(system_prompt: str, user_message: str, model: str = "gpt-4o-mini") -> s
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message},
+        ],
+        temperature=0.7,
+    )
+
+    return response.choices[0].message.content  # type: ignore[return-value]
+
+
+def chat_with_audio(system_prompt: str, audio_file_path: str, model: str = "gpt-4o-audio-preview") -> str:
+    """
+    Send an audio file to GPT-4o Audio model for transcription + command generation.
+
+    Args:
+        system_prompt: System instructions for the robot
+        audio_file_path: Path to the audio file (WAV format recommended)
+        model: Model to use (gpt-4o-audio-preview supports audio input)
+
+    Returns:
+        JSON string with robot commands
+    """
+    client = get_client()
+
+    # Read audio file as base64
+    import base64
+    audio_path = Path(audio_file_path)
+    with open(audio_path, 'rb') as audio_file:
+        audio_data = base64.b64encode(audio_file.read()).decode('utf-8')
+
+    response = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_audio",
+                        "input_audio": {
+                            "data": audio_data,
+                            "format": "wav"
+                        }
+                    }
+                ]
+            },
         ],
         temperature=0.7,
     )
