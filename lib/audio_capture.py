@@ -55,7 +55,18 @@ class AudioCapture:
     def __init__(self, vad_threshold: float = VAD_THRESHOLD):
         self.vad_threshold = vad_threshold
         self.sample_rate = SAMPLE_RATE
+        self.paused = False  # Flag to pause audio processing (e.g., during TTS playback)
         print(f"Initialized AudioCapture with vad_threshold: {vad_threshold}")
+
+    def pause(self):
+        """Pause audio processing (stops capturing new audio segments)"""
+        self.paused = True
+        print(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] 🔇 Audio capture paused")
+
+    def resume(self):
+        """Resume audio processing"""
+        self.paused = False
+        print(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] 🎤 Audio capture resumed")
 
     def _is_voice(self, audio: np.ndarray) -> bool:
         """Check if audio chunk contains voice based on energy threshold"""
@@ -147,6 +158,11 @@ class AudioCapture:
             while True:
                 data = audio_stream.read_all()
                 if data is None:
+                    time.sleep(0.01)
+                    continue
+
+                # Skip processing if paused (e.g., during TTS playback)
+                if self.paused:
                     time.sleep(0.01)
                     continue
 

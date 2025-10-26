@@ -4,15 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a Python-based robot control system for "junior", a physical robot car that can be controlled via speech-to-text commands. The system runs on Raspberry Pi 5 (8GB RAM) and supports both local (Whisper) and cloud (GPT-4o Audio) transcription modes. Components:
+This is a Python-based **conversational robot control system** for "junior", a physical robot car with full voice interaction capabilities. The system runs on Raspberry Pi 5 (8GB RAM) and supports both local (Whisper) and cloud (GPT-4o Audio) transcription modes, plus text-to-speech responses. Components:
 
 1. **Main Application** (`chat.py`) - Orchestrates voice control with dual-mode support: local Whisper or cloud GPT-4o Audio transcription
-2. **Audio Capture** (`lib/audio_capture.py`) - Pure audio capture service with VAD, independent of transcription backend
+2. **Audio Capture** (`lib/audio_capture.py`) - Pure audio capture service with VAD and pause/resume capability for feedback prevention
 3. **Speech-to-Text Module** (`lib/sttt.py`) - Local transcription using AudioCapture + faster-whisper, optimized for Raspberry Pi 5
-4. **GPT Integration** (`lib/gpt.py`) - OpenAI client supporting both text chat and audio input for command generation
-5. **Firmware Control** (`lib/firmware/`) - GPIO-based motor control for Raspberry Pi 5
-6. **Command Models** (`models.py`) - Pydantic models for validated robot commands
-7. **Utilities** (`scripts/`) - Helper scripts for testing (transcription, recording, text-based GPT)
+4. **Text-to-Speech Module** (`lib/tts.py`) - OpenAI TTS API integration for robot voice responses with automatic mic muting during playback
+5. **GPT Integration** (`lib/gpt.py`) - OpenAI client supporting both text chat and audio input for command generation
+6. **Firmware Control** (`lib/firmware/`) - GPIO-based motor control for Raspberry Pi 5
+7. **Command Models** (`models.py`) - Pydantic models for validated robot commands
+8. **Utilities** (`scripts/`) - Helper scripts for testing (transcription, recording, text-based GPT)
 
 ## Commands
 
@@ -62,11 +63,13 @@ python scripts/textgpt.py --user "turn left 90 degrees" --model gpt-4o
 
 ### Core Components
 
-- **`chat.py`**: Main application with dual-mode architecture. Supports both local (Whisper) and cloud (GPT-4o Audio) transcription. Orchestrates the complete voice control loop: audio capture → transcription → GPT command generation → firmware execution.
+- **`chat.py`**: Main application with dual-mode architecture. Supports both local (Whisper) and cloud (GPT-4o Audio) transcription. Orchestrates the complete conversational loop: audio capture → transcription → GPT command generation → firmware execution + TTS responses.
 
-- **`lib/audio_capture.py`**: Pure audio capture service with `AudioCapture` class. Handles microphone input, VAD (Voice Activity Detection), speech segmentation, and audio preprocessing (mono conversion, normalization, 16kHz resampling). Independent of transcription backend - used by both local and cloud modes.
+- **`lib/audio_capture.py`**: Pure audio capture service with `AudioCapture` class. Handles microphone input, VAD (Voice Activity Detection), speech segmentation, and audio preprocessing (mono conversion, normalization, 16kHz resampling). Features `pause()`/`resume()` methods to prevent audio feedback during TTS playback. Independent of transcription backend - used by both local and cloud modes.
 
 - **`lib/sttt.py`**: Local speech-to-text using `SpeechToTextTranscriber` class. Composes `AudioCapture` with faster-whisper for on-device transcription. Optimized for Raspberry Pi 5 with INT8 quantization and 4-thread CPU inference.
+
+- **`lib/tts.py`**: Text-to-speech using OpenAI TTS API. `speak(text, voice, audio_device)` function generates natural-sounding speech and plays through USB speaker (card 3) using `plughw` for automatic format conversion. Handles 24kHz audio from OpenAI.
 
 - **`lib/gpt.py`**: OpenAI client with two functions:
   - `chat(system_prompt, user_message)` - Text-based GPT chat for local transcription mode
@@ -83,8 +86,19 @@ python scripts/textgpt.py --user "turn left 90 degrees" --model gpt-4o
 The system uses a structured JSON command format defined in `prompts/system.md`. The robot "junior" responds to natural language with JSON arrays containing movement and speech commands:
 
 - **Movement commands**: `forward`, `backward`, `left`, `right` with millisecond durations
-- **Speech command**: `speak` with text body
+- **Speech command**: `speak` with text body - robot responds with natural voice via TTS
 - **Robot specifications**: 15x30x10 cm, 10 cm/s linear speed, 30°/s rotation speed
+
+### Voice Interaction Flow
+
+The robot supports full conversational interaction:
+
+1. **User speaks** → Mic captures audio with VAD
+2. **Transcription** → Local Whisper or Cloud GPT-4o Audio
+3. **GPT processing** → Natural language → JSON commands
+4. **Execution** → Movement and/or speech responses
+5. **Robot speaks** → TTS via OpenAI, mic paused during playback to prevent feedback
+6. **Loop continues** → Mic resumes, ready for next command
 
 ### Audio Processing Pipelines
 
@@ -95,7 +109,7 @@ The system uses a structured JSON command format defined in `prompts/system.md`.
 4. **Preprocessing**: Mono conversion, normalization (90% dynamic range), resampling to 16kHz
 5. **Transcription**: Local faster-whisper (INT8, 4 CPU threads) → ~7s for 1.7s audio
 6. **GPT Text API**: Transcribed text → GPT-4o-mini → JSON commands (~1s)
-7. **Execution**: Pydantic validation → firmware execution
+7. **Execution**: Pydantic validation → firmware execution + TTS responses (mic paused during speech)
    - **Total latency: ~8.5 seconds**
 
 #### Cloud Mode (GPT-4o Audio):
@@ -105,7 +119,7 @@ The system uses a structured JSON command format defined in `prompts/system.md`.
 4. **Preprocessing**: Same mono/normalize/resample pipeline
 5. **Audio File**: Save preprocessed audio to `/tmp/robot_command.wav`
 6. **GPT Audio API**: Audio file → GPT-4o Audio API → JSON commands (~1s)
-7. **Execution**: Pydantic validation → firmware execution
+7. **Execution**: Pydantic validation → firmware execution + TTS responses (mic paused during speech)
    - **Total latency: ~1.5 seconds** (6x faster!)
 
 ## Dependencies
@@ -122,10 +136,15 @@ The system uses a structured JSON command format defined in `prompts/system.md`.
 
 - **Environment**: API keys stored in `.env` file (requires `OPENAI_API_KEY`)
 - **Audio settings**:
-  - Sample rate: Auto-detected (fallback order: 16000, 44100, 48000, 8000 Hz)
+  - Input (microphone): Auto-detected (fallback order: 16000, 44100, 48000, 8000 Hz)
+  - Output (speaker): USB speaker card 3, uses `plughw:3,0` for automatic format conversion
   - VAD threshold: 0.0035 (adjustable via `--vad-threshold`)
   - Silence threshold: 800ms
   - Minimum audio duration: 0.5s
+- **TTS settings**:
+  - Model: OpenAI `tts-1` (or `tts-1-hd` for higher quality)
+  - Voice: `alloy` (configurable: alloy, echo, fable, onyx, nova, shimmer)
+  - Format: WAV at 24kHz (automatically converted by ALSA)
 - **Model selection**:
   - Whisper: tiny/small/medium (small recommended for accuracy/speed balance)
   - Compute type: INT8 (optimized for CPU)
@@ -146,6 +165,9 @@ The system uses a structured JSON command format defined in `prompts/system.md`.
 - **Trade-offs**: Fast and accurate but requires API key, internet connection, and incurs per-use costs
 
 ### System Configuration
-- **ALSA mixer**: Set mic volume to 100% via `amixer sset Capture 100%` for optimal audio levels
+- **ALSA mixer**:
+  - Microphone: `amixer sset Mic 100%` (set to maximum for optimal capture)
+  - Speaker: `amixer -c 3 sset PCM 85%` (adjust volume as needed)
 - **VAD threshold**: 0.0035 default (adjust with `--vad-threshold` for different environments)
 - **Silence threshold**: 800ms (optimal for command-based interaction)
+- **Feedback prevention**: Microphone automatically paused during TTS playback to prevent audio loops
