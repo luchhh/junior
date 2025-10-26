@@ -5,6 +5,7 @@ from pathlib import Path
 import argparse
 import sys
 import json
+from datetime import datetime
 from lib.sttt import SpeechToTextTranscriber, VAD_THRESHOLD
 from models import Command, MovementCommand, SpeakCommand, CommandList
 from pydantic import ValidationError
@@ -38,9 +39,11 @@ def execute_command(cmd: Command) -> None:
 def process_transcription(transcribed_text: str, system_prompt: str) -> None:
     """Send transcribed text to chat and execute robot commands"""
     try:
-        print(f"🎤 Transcribed: {transcribed_text}")
+        print(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] 🎤 Transcribed: {transcribed_text}")
+        gpt_start = datetime.now()
         response = chat(system_prompt, transcribed_text)
-        print(f"🤖 GPT response: {response}")
+        gpt_end = datetime.now()
+        print(f"[{gpt_end.strftime('%H:%M:%S.%f')[:-3]}] 🤖 GPT response: {response} (took {(gpt_end - gpt_start).total_seconds():.2f}s)")
 
         # Parse JSON response into CommandList
         response_json = json.loads(response)
@@ -73,6 +76,10 @@ def parse_arguments() -> argparse.Namespace:
 def main():
     print("VERSION 0.1")
     args = parse_arguments()
+
+    # Initialize firmware
+    fw.start()
+    print("🤖 Firmware initialized!")
 
     # Create transcriber instance
     transcriber = SpeechToTextTranscriber(args.model, args.language, args.vad_threshold)
