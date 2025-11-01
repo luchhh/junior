@@ -6,6 +6,8 @@ from pathlib import Path
 from dotenv import load_dotenv
 from openai import OpenAI
 import os
+from typing import Optional
+from .audio_device import get_audio_device
 
 
 PIPER_MODEL_PATH = os.path.expanduser("~/piper-voices/en_US-lessac-medium.onnx")
@@ -14,20 +16,19 @@ PIPER_MODEL_PATH = os.path.expanduser("~/piper-voices/en_US-lessac-medium.onnx")
 class TextToSpeech:
     """Text-to-Speech service with pluggable backends"""
 
-    def __init__(self, backend: str = "piper", audio_device: int = 1):
+    def __init__(self, backend: str = "piper"):
         """
         Initialize TTS service.
 
         Args:
             backend: "piper" for local TTS or "openai" for cloud TTS
-            audio_device: ALSA audio device card number (default: 1 for USB speaker)
         """
         if backend not in ["piper", "openai"]:
             raise ValueError(f"Unknown TTS backend: {backend}. Choose 'piper' or 'openai'")
 
         self.backend = backend
-        self.audio_device = audio_device
-        print(f"🗣️  TTS initialized: {backend} backend, audio device {audio_device}")
+        self.audio_device = get_audio_device()
+        print(f"🗣️  TTS initialized: {backend} backend, audio device {self.audio_device}")
 
     def _get_openai_client(self) -> OpenAI:
         """Create and return an OpenAI client using the API key from env."""

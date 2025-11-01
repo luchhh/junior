@@ -121,7 +121,8 @@ def main():
     print("VERSION 0.2")
     args = parse_arguments()
 
-    tts = TextToSpeech(backend=args.tts, audio_device=1)
+    # Initialize TTS with auto-detected audio device
+    tts = TextToSpeech(backend=args.tts)
 
     # Initialize firmware
     fw.start()
