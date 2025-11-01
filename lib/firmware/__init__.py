@@ -57,25 +57,25 @@ def _set_motors(pin17, pin22, pin23, pin24, pw=100):
     lgpio.tx_pwm(h, 12, 1000, pw)  # 1kHz frequency, duty cycle 0-100%
     lgpio.tx_pwm(h, 13, 1000, pw)
 
-def forward(sec, pw=100):
+def forward(sec, pw=50):
     """Move forward for specified seconds at given power (0-100)"""
     _set_motors(0, 1, 0, 1, pw)
     time.sleep(sec)
     stop()
 
-def left_turn(sec, pw=100):
+def left_turn(sec, pw=50):
     """Turn left for specified seconds at given power (0-100)"""
     _set_motors(0, 1, 1, 0, pw)
     time.sleep(sec)
     stop()
 
-def reverse(sec, pw=100):
+def reverse(sec, pw=50):
     """Move backward for specified seconds at given power (0-100)"""
     _set_motors(1, 0, 1, 0, pw)
     time.sleep(sec)
     stop()
 
-def right_turn(sec, pw=100):
+def right_turn(sec, pw=50):
     """Turn right for specified seconds at given power (0-100)"""
     _set_motors(1, 0, 0, 1, pw)
     time.sleep(sec)
