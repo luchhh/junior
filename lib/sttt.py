@@ -14,18 +14,19 @@ class SpeechToTextTranscriber:
     Speech-to-text service using AudioCapture + Whisper.
 
     Combines audio capture with local Whisper transcription.
+    Uses "small" model (best balance of speed/accuracy for Raspberry Pi 5).
     """
 
-    def __init__(self, model_name: str, language: str, vad_threshold: float = VAD_THRESHOLD):
+    def __init__(self, language: str, vad_threshold: float = VAD_THRESHOLD):
         self.audio_capture = AudioCapture(vad_threshold)
-        self.model = self._create_whisper_model(model_name)
+        self.model = self._create_whisper_model()
         self.language = language
-        print(f"Initialized SpeechToTextTranscriber with model: {model_name}, language: {language}")
+        print(f"Initialized SpeechToTextTranscriber with model: small, language: {language}")
 
-    def _create_whisper_model(self, model_name: str) -> WhisperModel:
-        print(f"Loading model: {model_name}...")
+    def _create_whisper_model(self) -> WhisperModel:
+        print("Loading Whisper model: small...")
         return WhisperModel(
-            model_name,
+            "small",
             device="cpu",
             compute_type="int8",  # Faster on CPU, especially Raspberry Pi
             cpu_threads=4,  # Use all 4 cores of Raspberry Pi 5
