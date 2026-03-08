@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 
 from lib.gpt import chat, chat_with_audio
-from lib.audio_capture import AudioCapture, VAD_THRESHOLD
+from lib.sources import MicrophoneSource, VAD_THRESHOLD
 from lib.tts import TextToSpeech
 from pathlib import Path
 import argparse
 import sys
 import json
 from datetime import datetime
-from typing import Optional
 import numpy as np
 import soundfile as sf
 from lib.sttt import SpeechToTextTranscriber
@@ -24,7 +23,7 @@ def load_system_prompt() -> str:
     return system_path.read_text(encoding="utf-8").strip()
 
 
-def execute_command(cmd: Command, tts: TextToSpeech, audio_capture: Optional[AudioCapture] = None) -> None:
+def execute_command(cmd: Command, tts: TextToSpeech, source=None) -> None:
     """Execute a single robot command"""
     if isinstance(cmd, MovementCommand):
         sec = cmd.ms / 1000.0  # Convert milliseconds to seconds
@@ -39,18 +38,18 @@ def execute_command(cmd: Command, tts: TextToSpeech, audio_capture: Optional[Aud
                 fw.right_turn(sec)
     elif isinstance(cmd, SpeakCommand):
         # Pause audio capture to prevent feedback loop
-        if audio_capture:
-            audio_capture.pause()
+        if source:
+            source.pause()
 
         try:
             tts.speak(cmd.body)
         finally:
             # Always resume, even if TTS fails
-            if audio_capture:
-                audio_capture.resume()
+            if source:
+                source.resume()
 
 
-def process_gpt_response(response: str, tts: TextToSpeech, audio_capture: Optional[AudioCapture] = None) -> None:
+def process_gpt_response(response: str, tts: TextToSpeech, source=None) -> None:
     """Parse GPT response and execute robot commands"""
     fw.clear()  # Interrupt any ongoing movement before processing new command
     try:
@@ -64,7 +63,7 @@ def process_gpt_response(response: str, tts: TextToSpeech, audio_capture: Option
                 print(f"  → {cmd.command}: {cmd.ms}ms")
             elif isinstance(cmd, SpeakCommand):
                 print(f"  → speak: {cmd.body}")
-            execute_command(cmd, tts, audio_capture)
+            execute_command(cmd, tts, source)
 
     except json.JSONDecodeError as e:
         print(f"❌ Invalid JSON response: {e}", file=sys.stderr)
@@ -74,7 +73,7 @@ def process_gpt_response(response: str, tts: TextToSpeech, audio_capture: Option
         print(f"❌ Command execution error: {e}", file=sys.stderr)
 
 
-def process_transcription(transcribed_text: str, system_prompt: str, tts: TextToSpeech, audio_capture: Optional[AudioCapture] = None) -> None:
+def process_transcription(transcribed_text: str, system_prompt: str, tts: TextToSpeech, source=None) -> None:
     """Send transcribed text to GPT and execute robot commands"""
     try:
         print(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] 🎤 Transcribed: {transcribed_text}")
@@ -83,13 +82,13 @@ def process_transcription(transcribed_text: str, system_prompt: str, tts: TextTo
         gpt_end = datetime.now()
         print(f"[{gpt_end.strftime('%H:%M:%S.%f')[:-3]}] 🤖 GPT response: {response} (took {(gpt_end - gpt_start).total_seconds():.2f}s)")
 
-        process_gpt_response(response, tts, audio_capture)
+        process_gpt_response(response, tts, source)
 
     except Exception as e:
         print(f"❌ Chat error: {e}", file=sys.stderr)
 
 
-def process_audio(audio: np.ndarray, sample_rate: int, system_prompt: str, tts: TextToSpeech, audio_capture: Optional[AudioCapture] = None) -> None:
+def process_audio(audio: np.ndarray, sample_rate: int, system_prompt: str, tts: TextToSpeech, source=None) -> None:
     """Send audio directly to GPT for transcription + command generation"""
     try:
         # Save audio to temp file
@@ -103,7 +102,7 @@ def process_audio(audio: np.ndarray, sample_rate: int, system_prompt: str, tts: 
         gpt_end = datetime.now()
         print(f"[{gpt_end.strftime('%H:%M:%S.%f')[:-3]}] 🤖 GPT response: {response} (took {(gpt_end - gpt_start).total_seconds():.2f}s)")
 
-        process_gpt_response(response, tts, audio_capture)
+        process_gpt_response(response, tts, source)
 
     except Exception as e:
         print(f"❌ Chat error: {e}", file=sys.stderr)
@@ -122,36 +121,27 @@ def main():
     print("VERSION 0.2")
     args = parse_arguments()
 
-    # Initialize TTS with auto-detected audio device
     tts = TextToSpeech(backend=args.tts)
-
-    # Initialize firmware
     fw.start()
     print("🤖 Firmware initialized!")
 
-    # Load system prompt for robot commands
     system_prompt = load_system_prompt()
     print("🤖 Robot system loaded!")
 
     if args.stt == "openai":
-        # Cloud mode: Use AudioCapture + send audio to GPT
         print("☁️  Cloud transcription mode (GPT-4o Audio)")
-        audio_capture = AudioCapture(args.vad_threshold)
-
+        source = MicrophoneSource(args.vad_threshold)
         try:
-            audio_capture.capture(lambda audio, sr: process_audio(audio, sr, system_prompt, tts, audio_capture))
+            for audio, sr in source:
+                process_audio(audio, sr, system_prompt, tts, source)
         except KeyboardInterrupt:
             print("\nStopped by user.")
     else:
-        # Local mode: Use SpeechToTextTranscriber (AudioCapture + Whisper)
         print("🖥️  Local transcription mode (Whisper)")
-        transcriber = SpeechToTextTranscriber(args.language, args.vad_threshold)
-
-        # Get reference to the underlying AudioCapture for TTS pause/resume
-        audio_capture = transcriber.audio_capture
-
+        source = SpeechToTextTranscriber(args.language, args.vad_threshold)
         try:
-            transcriber.call(lambda text: process_transcription(text, system_prompt, tts, audio_capture))
+            for text in source:
+                process_transcription(text, system_prompt, tts, source)
         except KeyboardInterrupt:
             print("\nStopped by user.")
 

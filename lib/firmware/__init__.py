@@ -1,5 +1,6 @@
 import atexit
 from lib.command_queue import CommandQueue
+from datetime import datetime
 
 try:
     import lgpio
@@ -35,6 +36,7 @@ def start():
 
 def _stop_motors():
     """Internal: stop GPIO without touching the queue"""
+    print(f"[FIRMWARE - {datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Stopping motors")
     if h is not None:
         lgpio.tx_pwm(h, 12, 1000, 0)
         lgpio.tx_pwm(h, 13, 1000, 0)
@@ -72,20 +74,24 @@ def _set_motors(pin17, pin22, pin23, pin24, pw=100):
 
 def forward(sec, pw=100):
     """Move forward for specified seconds at given power (0-100)"""
+    print(f"[FIRMWARE - {datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Moving forward for {sec} seconds at {pw}% power")
     _queue.enqueue(_set_motors, 0, 1, 0, 1, pw)
     _queue.enqueue(_stop_motors, delay=sec)
 
 def left_turn(sec, pw=100):
     """Turn left for specified seconds at given power (0-100)"""
+    print(f"[FIRMWARE - {datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Turning left for {sec} seconds at {pw}% power")
     _queue.enqueue(_set_motors, 0, 1, 1, 0, pw)
     _queue.enqueue(_stop_motors, delay=sec)
 
 def reverse(sec, pw=100):
     """Move backward for specified seconds at given power (0-100)"""
+    print(f"[FIRMWARE - {datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Moving backward for {sec} seconds at {pw}% power")
     _queue.enqueue(_set_motors, 1, 0, 1, 0, pw)
     _queue.enqueue(_stop_motors, delay=sec)
 
 def right_turn(sec, pw=100):
     """Turn right for specified seconds at given power (0-100)"""
+    print(f"[FIRMWARE - {datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Turning right for {sec} seconds at {pw}% power")
     _queue.enqueue(_set_motors, 1, 0, 0, 1, pw)
     _queue.enqueue(_stop_motors, delay=sec)

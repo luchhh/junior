@@ -16,15 +16,11 @@ def main():
     print("VERSION 0.1")
     args = parse_arguments()
 
-    # Create transcriber instance
-    transcriber = SpeechToTextTranscriber(args.model, args.language, args.vad_threshold)
-
-    # Define callback function for transcription results
-    def on_transcription(text: str):
-        print("Transcription:", text)
+    transcriber = SpeechToTextTranscriber(args.language, args.vad_threshold)
 
     try:
-        transcriber.call(on_transcription)
+        for text in transcriber:
+            print("Transcription:", text)
     except KeyboardInterrupt:
         print("\nStopped by user.")
 
