@@ -14,6 +14,10 @@ class CommandQueue:
         """Add a command. delay = seconds to wait before executing."""
         self._queue.put((delay, func, args, kwargs))
 
+    def wait(self):
+        """Block until all enqueued commands have been executed."""
+        self._queue.join()
+
     def clear(self):
         """Flush all pending commands (e.g. on new voice interrupt)."""
         while not self._queue.empty():
