@@ -3,7 +3,6 @@ Text-to-Speech module supporting both OpenAI TTS API and local Piper TTS
 """
 import subprocess
 from pathlib import Path
-from dotenv import load_dotenv
 from openai import OpenAI
 import os
 from typing import Optional
@@ -16,29 +15,14 @@ PIPER_MODEL_PATH = os.path.expanduser("~/piper-voices/en_US-lessac-medium.onnx")
 class TextToSpeech:
     """Text-to-Speech service with pluggable backends"""
 
-    def __init__(self, backend: str = "piper"):
-        """
-        Initialize TTS service.
-
-        Args:
-            backend: "piper" for local TTS or "openai" for cloud TTS
-        """
+    def __init__(self, backend: str = "piper", api_key: Optional[str] = None):
         if backend not in ["piper", "openai"]:
             raise ValueError(f"Unknown TTS backend: {backend}. Choose 'piper' or 'openai'")
 
         self.backend = backend
         self.audio_device = get_audio_device()
+        self._client = OpenAI(api_key=api_key) if backend == "openai" else None
         print(f"🗣️  TTS initialized: {backend} backend, audio device {self.audio_device}")
-
-    def _get_openai_client(self) -> OpenAI:
-        """Create and return an OpenAI client using the API key from env."""
-        load_dotenv()
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            raise RuntimeError(
-                "OPENAI_API_KEY is not set. Add it to your environment or .env file."
-            )
-        return OpenAI(api_key=api_key)
 
     def _speak_piper(self, text: str) -> None:
         """Generate speech using local Piper TTS"""
@@ -80,8 +64,7 @@ class TextToSpeech:
     def _speak_openai(self, text: str, voice: str = "alloy") -> None:
         """Generate speech using OpenAI TTS API"""
         try:
-            client = self._get_openai_client()
-            response = client.audio.speech.create(
+            response = self._client.audio.speech.create(
                 model="tts-1",
                 voice=voice,
                 input=text,
