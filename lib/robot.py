@@ -5,22 +5,24 @@ from datetime import datetime
 import numpy as np
 import soundfile
 
-from lib.gpt import chat, chat_with_audio
+from lib.firmware import Firmware
+from lib.gpt import GPT
 from lib.sources import MicrophoneSource
 from lib.sttt import SpeechToTextTranscriber
 from lib.tts import TextToSpeech
 from models import MovementCommand, SpeakCommand, CommandList
 from pydantic import ValidationError
-import lib.firmware as fw
 
 
 class Robot:
-    def __init__(self, tts: TextToSpeech, system_prompt: str, source: MicrophoneSource, stt: str = "openai", language: str = "en"):
+    def __init__(self, tts: TextToSpeech, system_prompt: str, source: MicrophoneSource, gpt: GPT, firmware: Firmware, stt: str = "openai", language: str = "en"):
         self.tts = tts
         self.system_prompt = system_prompt
         self.source = source
         self.stt = stt
         self.language = language
+        self.gpt = gpt
+        self.firmware = firmware
 
     def run(self) -> None:
         match self.stt:
@@ -29,14 +31,14 @@ class Robot:
                 for audio, sample_rate in self.source:
                     audio_path = '/tmp/robot_command.wav'
                     soundfile.write(audio_path, audio, sample_rate)
-                    self._call_gpt("🎤 Sending audio to GPT...", lambda: chat_with_audio(self.system_prompt, audio_path))
+                    self._call_gpt("🎤 Sending audio to GPT...", lambda: self.gpt.chat_with_audio(self.system_prompt, audio_path))
             case "whisper":
                 print("🖥️  Local transcription mode (Whisper)")
                 transcriber = SpeechToTextTranscriber(self.language)
                 for audio, sr in self.source:
                     text = transcriber.transcribe(audio, sr)
                     if text:
-                        self._call_gpt(f"🎤 Transcribed: {text}", lambda: chat(self.system_prompt, text))
+                        self._call_gpt(f"🎤 Transcribed: {text}", lambda: self.gpt.chat(self.system_prompt, text))
 
     def _call_gpt(self, label: str, gpt_fn) -> None:
         try:
@@ -50,7 +52,7 @@ class Robot:
             print(f"❌ Chat error: {e}", file=sys.stderr)
 
     def _handle_response(self, response: str) -> None:
-        fw.clear()
+        self.firmware.clear()
         try:
             commands = CommandList(root=json.loads(response)).root
             print(f"🤖 Robot commands: {len(commands)} action(s)")
@@ -72,13 +74,13 @@ class Robot:
             sec = cmd.ms / 1000.0
             match cmd.command:
                 case "forward":
-                    fw.forward(sec)
+                    self.firmware.forward(sec)
                 case "backward":
-                    fw.reverse(sec)
+                    self.firmware.reverse(sec)
                 case "left":
-                    fw.left_turn(sec)
+                    self.firmware.left_turn(sec)
                 case "right":
-                    fw.right_turn(sec)
+                    self.firmware.right_turn(sec)
         elif isinstance(cmd, SpeakCommand):
             self.source.pause()
             try:

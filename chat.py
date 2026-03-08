@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 
 import argparse
+import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+from lib.firmware import Firmware
+from lib.gpt import GPT
 from lib.sources import MicrophoneSource, VAD_THRESHOLD
 from lib.tts import TextToSpeech
 from lib.robot import Robot
-import lib.firmware as firmware
 
 
 def load_system_prompt() -> str:
@@ -26,18 +29,20 @@ def parse_arguments() -> argparse.Namespace:
 
 
 def main():
+    load_dotenv()
     print("VERSION 0.2")
     args = parse_arguments()
 
     tts = TextToSpeech(backend=args.tts)
-    firmware.start()
-    print("🤖 Firmware initialized!")
-
     system_prompt = load_system_prompt()
     print("🤖 Robot system loaded!")
 
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise RuntimeError("OPENAI_API_KEY is not set. Add it to your environment or .env file.")
+
     source = MicrophoneSource(args.vad_threshold)
-    robot = Robot(tts, system_prompt, source, stt=args.stt, language=args.language)
+    robot = Robot(tts, system_prompt, source, GPT(api_key), Firmware(), stt=args.stt, language=args.language)
 
     try:
         robot.run()
