@@ -1,5 +1,6 @@
-import time
 import atexit
+from lib.command_queue import CommandQueue
+from datetime import datetime
 
 try:
     import lgpio
@@ -12,6 +13,9 @@ h = None
 # Pin definitions
 MOTOR_DIR_PINS = [17, 22, 23, 24]
 MOTOR_PWM_PINS = [12, 13]
+
+# Module-level command queue for non-blocking motor control
+_queue = CommandQueue("FirmwareQueue")
 
 def start():
     """Initialize GPIO - call once at startup"""
@@ -30,13 +34,24 @@ def start():
         # Register cleanup on exit
         atexit.register(_cleanup)
 
-def stop():
-    """Stop all motors"""
+def _stop_motors():
+    """Internal: stop GPIO without touching the queue"""
+    print(f"[FIRMWARE - {datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Stopping motors")
     if h is not None:
         lgpio.tx_pwm(h, 12, 1000, 0)
         lgpio.tx_pwm(h, 13, 1000, 0)
         for pin in MOTOR_DIR_PINS:
             lgpio.gpio_write(h, pin, 0)
+
+def stop():
+    """Stop all motors immediately and flush pending commands"""
+    _queue.clear()
+    _stop_motors()
+
+def clear():
+    """Flush pending firmware commands (e.g. on new voice interrupt)"""
+    _queue.clear()
+    _stop_motors()
 
 def _cleanup():
     """Internal cleanup - called automatically on exit"""
@@ -59,24 +74,24 @@ def _set_motors(pin17, pin22, pin23, pin24, pw=100):
 
 def forward(sec, pw=100):
     """Move forward for specified seconds at given power (0-100)"""
-    _set_motors(0, 1, 0, 1, pw)
-    time.sleep(sec)
-    stop()
+    print(f"[FIRMWARE - {datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Moving forward for {sec} seconds at {pw}% power")
+    _queue.enqueue(_set_motors, 0, 1, 0, 1, pw)
+    _queue.enqueue(_stop_motors, delay=sec)
 
 def left_turn(sec, pw=100):
     """Turn left for specified seconds at given power (0-100)"""
-    _set_motors(0, 1, 1, 0, pw)
-    time.sleep(sec)
-    stop()
+    print(f"[FIRMWARE - {datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Turning left for {sec} seconds at {pw}% power")
+    _queue.enqueue(_set_motors, 0, 1, 1, 0, pw)
+    _queue.enqueue(_stop_motors, delay=sec)
 
 def reverse(sec, pw=100):
     """Move backward for specified seconds at given power (0-100)"""
-    _set_motors(1, 0, 1, 0, pw)
-    time.sleep(sec)
-    stop()
+    print(f"[FIRMWARE - {datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Moving backward for {sec} seconds at {pw}% power")
+    _queue.enqueue(_set_motors, 1, 0, 1, 0, pw)
+    _queue.enqueue(_stop_motors, delay=sec)
 
 def right_turn(sec, pw=100):
     """Turn right for specified seconds at given power (0-100)"""
-    _set_motors(1, 0, 0, 1, pw)
-    time.sleep(sec)
-    stop()  
+    print(f"[FIRMWARE - {datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Turning right for {sec} seconds at {pw}% power")
+    _queue.enqueue(_set_motors, 1, 0, 0, 1, pw)
+    _queue.enqueue(_stop_motors, delay=sec)

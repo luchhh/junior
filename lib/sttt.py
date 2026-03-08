@@ -1,6 +1,7 @@
+import queue
 import sys
+import threading
 from datetime import datetime
-from typing import Optional
 
 import numpy as np
 import soundfile as sf
@@ -21,6 +22,8 @@ class SpeechToTextTranscriber:
         self.audio_capture = AudioCapture(vad_threshold)
         self.model = self._create_whisper_model()
         self.language = language
+        self._queue: queue.Queue = queue.Queue()
+        self._thread: threading.Thread | None = None
         print(f"Initialized SpeechToTextTranscriber with model: small, language: {language}")
 
     def _create_whisper_model(self) -> WhisperModel:
@@ -33,7 +36,7 @@ class SpeechToTextTranscriber:
             num_workers=1
         )
 
-    def _transcribe_audio(self, audio: np.ndarray, sample_rate: int) -> Optional[str]:
+    def _transcribe_audio(self, audio: np.ndarray, sample_rate: int) -> str | None:
         """Transcribe audio using Whisper"""
         # Debug: save audio sample
         sf.write('/tmp/debug_audio.wav', audio, sample_rate)
@@ -55,21 +58,30 @@ class SpeechToTextTranscriber:
             print(f"Transcription error: {e}", file=sys.stderr)
             return None
 
-    def call(self, transcription_callback, device: int = 0):
-        """
-        Start real-time transcription from microphone.
-
-        Args:
-            transcription_callback: Function that takes transcribed text string
-            device: Audio input device index (default: 0)
-        """
+    def _run(self):
         def on_audio_captured(audio: np.ndarray, sample_rate: int):
-            """Called by AudioCapture when audio segment is ready"""
             text = self._transcribe_audio(audio, sample_rate)
             if text and len(text.strip()) > 0:
-                transcription_callback(text)
+                self._queue.put(text)
             else:
                 print(f"No transcription result (got: '{text}')")
 
-        # Use AudioCapture to get audio segments, then transcribe them
-        self.audio_capture.capture(on_audio_captured, device=device)
+        self.audio_capture.capture(on_audio_captured)
+
+    def pause(self):
+        self.audio_capture.pause()
+
+    def resume(self):
+        self.audio_capture.resume()
+
+    def __iter__(self):
+        if self._thread is None:
+            self._thread = threading.Thread(target=self._run, daemon=True)
+            self._thread.start()
+
+        while True:
+            try:
+                yield self._queue.get(timeout=1.0)
+            except queue.Empty:
+                if not self._thread.is_alive():
+                    raise RuntimeError("Transcription thread died unexpectedly")
