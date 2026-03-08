@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from lib.firmware import Firmware
 from lib.gpt import GPT
 from lib.sources import MicrophoneSource, VAD_THRESHOLD
+from lib.sttt import SpeechToTextTranscriber
 from lib.tts import TextToSpeech
 from lib.robot import Robot
 
@@ -41,8 +42,9 @@ def main():
     system_prompt = load_system_prompt()
     print("🤖 Robot system loaded!")
 
+    transcriber = SpeechToTextTranscriber(args.language) if args.stt == "whisper" else None
     source = MicrophoneSource(args.vad_threshold)
-    robot = Robot(tts, system_prompt, source, GPT(api_key), Firmware(), stt=args.stt, language=args.language)
+    robot = Robot(tts, system_prompt, source, GPT(api_key), Firmware(), transcriber=transcriber, stt=args.stt)
 
     try:
         robot.run()
