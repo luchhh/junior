@@ -9,3 +9,4 @@ scipy>=1.11.0,<2.0.0
 
 piper-tts>=1.2.0,<2.0.0
 
+pytest

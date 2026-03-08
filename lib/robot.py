@@ -8,21 +8,21 @@ import soundfile
 from lib.firmware import Firmware
 from lib.gpt import GPT
 from lib.sources import MicrophoneSource
-from lib.sttt import SpeechToTextTranscriber
 from lib.tts import TextToSpeech
-from models import MovementCommand, SpeakCommand, CommandList
+from lib.sttt import SpeechToTextTranscriber
+from lib.models import MovementCommand, SpeakCommand, CommandList
 from pydantic import ValidationError
 
 
 class Robot:
-    def __init__(self, tts: TextToSpeech, system_prompt: str, source: MicrophoneSource, gpt: GPT, firmware: Firmware, stt: str = "openai", language: str = "en"):
+    def __init__(self, tts: TextToSpeech, system_prompt: str, source: MicrophoneSource, gpt: GPT, firmware: Firmware, transcriber: SpeechToTextTranscriber | None = None, stt: str = "openai"):
         self.tts = tts
         self.system_prompt = system_prompt
         self.source = source
         self.stt = stt
-        self.language = language
         self.gpt = gpt
         self.firmware = firmware
+        self.transcriber = transcriber
 
     def run(self) -> None:
         match self.stt:
@@ -34,9 +34,8 @@ class Robot:
                     self._call_gpt("🎤 Sending audio to GPT...", lambda: self.gpt.chat_with_audio(self.system_prompt, audio_path))
             case "whisper":
                 print("🖥️  Local transcription mode (Whisper)")
-                transcriber = SpeechToTextTranscriber(self.language)
                 for audio, sr in self.source:
-                    text = transcriber.transcribe(audio, sr)
+                    text = self.transcriber.transcribe(audio, sr)
                     if text:
                         self._call_gpt(f"🎤 Transcribed: {text}", lambda: self.gpt.chat(self.system_prompt, text))
 
