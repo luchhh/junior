@@ -138,10 +138,13 @@ def main():
             print("\nStopped by user.")
     else:
         print("🖥️  Local transcription mode (Whisper)")
-        source = SpeechToTextTranscriber(args.language, args.vad_threshold)
+        source = MicrophoneSource(args.vad_threshold)
+        transcriber = SpeechToTextTranscriber(args.language)
         try:
-            for text in source:
-                process_transcription(text, system_prompt, tts, source)
+            for audio, sr in source:
+                text = transcriber.transcribe(audio, sr)
+                if text:
+                    process_transcription(text, system_prompt, tts, source)
         except KeyboardInterrupt:
             print("\nStopped by user.")
 
