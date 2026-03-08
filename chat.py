@@ -52,6 +52,7 @@ def execute_command(cmd: Command, tts: TextToSpeech, audio_capture: Optional[Aud
 
 def process_gpt_response(response: str, tts: TextToSpeech, audio_capture: Optional[AudioCapture] = None) -> None:
     """Parse GPT response and execute robot commands"""
+    fw.clear()  # Interrupt any ongoing movement before processing new command
     try:
         # Parse JSON response into CommandList
         response_json = json.loads(response)
