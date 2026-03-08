@@ -6,13 +6,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a Python-based **conversational robot control system** for "junior", a physical robot car with full voice interaction capabilities. The system runs on Raspberry Pi 5 (8GB RAM) and supports both local (Whisper) and cloud (GPT-4o Audio) transcription modes, plus text-to-speech responses. Components:
 
-1. **Main Application** (`chat.py`) - Orchestrates voice control with dual-mode support: local Whisper or cloud GPT-4o Audio transcription
+1. **Main Application** (`main.py`) - Orchestrates voice control with dual-mode support: local Whisper or cloud GPT-4o Audio transcription
 2. **Audio Capture** (`lib/audio_capture.py`) - Pure audio capture service with VAD and pause/resume capability for feedback prevention
 3. **Speech-to-Text Module** (`lib/sttt.py`) - Local transcription using AudioCapture + faster-whisper, optimized for Raspberry Pi 5
 4. **Text-to-Speech Module** (`lib/tts.py`) - OpenAI TTS API integration for robot voice responses with automatic mic muting during playback
 5. **GPT Integration** (`lib/gpt.py`) - OpenAI client supporting both text chat and audio input for command generation
 6. **Firmware Control** (`lib/firmware/`) - GPIO-based motor control for Raspberry Pi 5
-7. **Command Models** (`models.py`) - Pydantic models for validated robot commands
+7. **Command Models** (`lib/models.py`) - Pydantic models for validated robot commands
 8. **Utilities** (`scripts/`) - Helper scripts for testing (transcription, recording, text-based GPT)
 
 ## Commands
@@ -29,10 +29,10 @@ cp .env.example .env  # if available, or create .env with OPENAI_API_KEY
 ### Running the System
 ```bash
 # RECOMMENDED: Cloud transcription (fast, accurate, requires API key)
-python chat.py --cloud --language en         # ~1.5s total latency
+python main.py --cloud --language en         # ~1.5s total latency
 
 # Local transcription (slower, private, no API costs)
-python chat.py --model small --language en   # ~8.5s total latency
+python main.py --model small --language en   # ~8.5s total latency
 
 # Testing utilities
 python scripts/transcribe.py --model small --language en  # STT only
@@ -46,14 +46,14 @@ python scripts/textgpt.py --user "move forward 50 centimeters"  # GPT only (no S
 python scripts/record_mic.py --list
 
 # Cloud mode (GPT-4o Audio API)
-python chat.py --cloud --language en                     # Fast, ~1.5s total latency
-python chat.py --cloud --vad-threshold 0.003 --language en  # Adjust sensitivity
+python main.py --cloud --language en                     # Fast, ~1.5s total latency
+python main.py --cloud --vad-threshold 0.003 --language en  # Adjust sensitivity
 
 # Local mode (Whisper on Raspberry Pi)
-python chat.py --model tiny --language en     # ~3s transcription, lower accuracy
-python chat.py --model small --language en    # ~7s transcription, good accuracy
-python chat.py --model medium --language en   # >15s transcription, best accuracy
-python chat.py --vad-threshold 0.0035 --language en  # Adjust VAD sensitivity
+python main.py --model tiny --language en     # ~3s transcription, lower accuracy
+python main.py --model small --language en    # ~7s transcription, good accuracy
+python main.py --model medium --language en   # >15s transcription, best accuracy
+python main.py --vad-threshold 0.0035 --language en  # Adjust VAD sensitivity
 
 # Text-only GPT testing
 python scripts/textgpt.py --user "turn left 90 degrees" --model gpt-4o
@@ -63,7 +63,7 @@ python scripts/textgpt.py --user "turn left 90 degrees" --model gpt-4o
 
 ### Core Components
 
-- **`chat.py`**: Main application with dual-mode architecture. Supports both local (Whisper) and cloud (GPT-4o Audio) transcription. Orchestrates the complete conversational loop: audio capture → transcription → GPT command generation → firmware execution + TTS responses.
+- **`main.py`**: Main application with dual-mode architecture. Supports both local (Whisper) and cloud (GPT-4o Audio) transcription. Orchestrates the complete conversational loop: audio capture → transcription → GPT command generation → firmware execution + TTS responses.
 
 - **`lib/audio_capture.py`**: Pure audio capture service with `AudioCapture` class. Handles microphone input, VAD (Voice Activity Detection), speech segmentation, and audio preprocessing (mono conversion, normalization, 16kHz resampling). Features `pause()`/`resume()` methods to prevent audio feedback during TTS playback. Independent of transcription backend - used by both local and cloud modes.
 
@@ -77,7 +77,7 @@ python scripts/textgpt.py --user "turn left 90 degrees" --model gpt-4o
 
 - **`lib/firmware/__init__.py`**: Motor control via GPIO pins using lgpio library (Raspberry Pi 5 compatible). Provides `forward()`, `reverse()`, `left_turn()`, `right_turn()` functions with duration and power control.
 
-- **`models.py`**: Pydantic data models for command validation (`MovementCommand`, `SpeakCommand`, `CommandList`).
+- **`lib/models.py`**: Pydantic data models for command validation (`MovementCommand`, `SpeakCommand`, `CommandList`).
 
 - **`scripts/`**: Standalone utilities for testing individual components without full system integration.
 
