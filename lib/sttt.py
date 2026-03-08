@@ -1,29 +1,24 @@
-import queue
 import sys
-import threading
 from datetime import datetime
+from typing import Optional
 
 import numpy as np
 import soundfile as sf
 from faster_whisper import WhisperModel
 
-from .audio_capture import AudioCapture, VAD_THRESHOLD
+from .audio_capture import VAD_THRESHOLD
 
 
 class SpeechToTextTranscriber:
     """
-    Speech-to-text service using AudioCapture + Whisper.
-
-    Combines audio capture with local Whisper transcription.
+    Transcription service using local Whisper.
+    Receives audio data and returns transcribed text.
     Uses "small" model (best balance of speed/accuracy for Raspberry Pi 5).
     """
 
-    def __init__(self, language: str, vad_threshold: float = VAD_THRESHOLD):
-        self.audio_capture = AudioCapture(vad_threshold)
-        self.model = self._create_whisper_model()
+    def __init__(self, language: str):
         self.language = language
-        self._queue: queue.Queue = queue.Queue()
-        self._thread: threading.Thread | None = None
+        self.model = self._create_whisper_model()
         print(f"Initialized SpeechToTextTranscriber with model: small, language: {language}")
 
     def _create_whisper_model(self) -> WhisperModel:
@@ -36,9 +31,8 @@ class SpeechToTextTranscriber:
             num_workers=1
         )
 
-    def _transcribe_audio(self, audio: np.ndarray, sample_rate: int) -> str | None:
-        """Transcribe audio using Whisper"""
-        # Debug: save audio sample
+    def transcribe(self, audio: np.ndarray, sample_rate: int) -> Optional[str]:
+        """Transcribe audio and return text, or None if nothing detected."""
         sf.write('/tmp/debug_audio.wav', audio, sample_rate)
         print(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Saved debug audio to /tmp/debug_audio.wav (shape: {audio.shape}, min: {audio.min():.4f}, max: {audio.max():.4f})")
 
@@ -47,7 +41,7 @@ class SpeechToTextTranscriber:
             segments, _ = self.model.transcribe(
                 audio,
                 beam_size=1,
-                vad_filter=False,  # Disabled - we already do VAD before transcription
+                vad_filter=False,
                 language=self.language
             )
             text = "".join(s.text for s in segments).strip()
@@ -57,31 +51,3 @@ class SpeechToTextTranscriber:
         except Exception as e:
             print(f"Transcription error: {e}", file=sys.stderr)
             return None
-
-    def _run(self):
-        def on_audio_captured(audio: np.ndarray, sample_rate: int):
-            text = self._transcribe_audio(audio, sample_rate)
-            if text and len(text.strip()) > 0:
-                self._queue.put(text)
-            else:
-                print(f"No transcription result (got: '{text}')")
-
-        self.audio_capture.capture(on_audio_captured)
-
-    def pause(self):
-        self.audio_capture.pause()
-
-    def resume(self):
-        self.audio_capture.resume()
-
-    def __iter__(self):
-        if self._thread is None:
-            self._thread = threading.Thread(target=self._run, daemon=True)
-            self._thread.start()
-
-        while True:
-            try:
-                yield self._queue.get(timeout=1.0)
-            except queue.Empty:
-                if not self._thread.is_alive():
-                    raise RuntimeError("Transcription thread died unexpectedly")
