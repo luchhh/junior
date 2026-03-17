@@ -54,6 +54,37 @@ The robot understands natural language and converts it to JSON commands for prec
 
 ---
 
+## Installation (Raspberry Pi)
+
+```bash
+# Install pip if not already installed
+sudo apt-get install python3-pip
+
+# Clone the repo
+git clone https://github.com/luchhh/junior.git
+cd junior
+
+# Install dependencies
+pip install -r requirements.txt --break-system-packages
+
+# Set up environment variables
+cp .env.example .env  # then add your OPENAI_API_KEY
+```
+
+> `--break-system-packages` is safe here because the Pi runs only this project and has no other Python dependencies to conflict with.
+
+### Running
+
+```bash
+# Cloud mode (recommended — ~1.5s latency)
+python main.py --stt openai --language en
+
+# Local mode (no API cost — ~8.5s latency)
+python main.py --stt whisper --language en
+```
+
+---
+
 ## Roadmap
 
 ### Completed
