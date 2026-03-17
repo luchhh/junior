@@ -5,6 +5,7 @@ from typing import Iterator
 import numpy as np
 
 from .audio_capture import AudioCapture, VAD_THRESHOLD
+from .audio_device import get_input_device
 
 
 class MicrophoneSource:
@@ -18,6 +19,7 @@ class MicrophoneSource:
 
     def __init__(self, vad_threshold: float = VAD_THRESHOLD):
         self._capture = AudioCapture(vad_threshold)
+        self._device = get_input_device()
         self._queue: queue.Queue = queue.Queue()
         self._thread: threading.Thread | None = None
 
@@ -32,6 +34,7 @@ class MicrophoneSource:
             self._thread = threading.Thread(
                 target=self._capture.capture,
                 args=(lambda audio, sr: self._queue.put((audio, sr)),),
+                kwargs={"device": self._device},
                 daemon=True,
             )
             self._thread.start()
