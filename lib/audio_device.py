@@ -1,67 +1,36 @@
 """
-Audio device detection utilities for ALSA
+Audio device detection utilities
 """
-import subprocess
-import re
 from typing import Optional
 
+import sounddevice as sd
 
-def detect_usb_audio_device() -> Optional[int]:
+
+def get_input_device() -> Optional[int]:
     """
-    Auto-detect USB audio output device by parsing aplay -l output.
-    Looks for devices with "USB" in their description.
-
-    Returns:
-        Card number of USB audio device, or None if not found
+    Find the input (microphone) device index.
+    Looks for the first USB device with input channels.
+    Falls back to None (system default).
     """
-    try:
-        result = subprocess.run(
-            ["aplay", "-l"],
-            capture_output=True,
-            text=True,
-            check=True
-        )
+    for i, d in enumerate(sd.query_devices()):
+        if "USB" in d["name"].upper() and d["max_input_channels"] > 0:
+            print(f"🎤 Auto-detected USB microphone: [{i}] {d['name']}")
+            return i
 
-        # Parse output line by line
-        # Format: "card 1: UACDemoV10 [UACDemoV1.0], device 0: USB Audio [USB Audio]"
-        for line in result.stdout.split('\n'):
-            # Look for lines starting with "card" that contain "USB"
-            if line.startswith('card') and 'USB' in line.upper():
-                match = re.match(r'^card (\d+):', line)
-                if match:
-                    card_num = int(match.group(1))
-                    # Extract device name for logging
-                    name_match = re.search(r'\[([^\]]+)\]', line)
-                    device_name = name_match.group(1) if name_match else "Unknown"
-                    print(f"🔊 Auto-detected USB audio device: card {card_num} [{device_name}]")
-                    return card_num
-
-        print("⚠️  No USB audio device found")
-        return None
-
-    except subprocess.CalledProcessError as e:
-        print(f"❌ Failed to detect audio devices: {e}")
-        return None
-    except Exception as e:
-        print(f"❌ Audio device detection error: {e}")
-        return None
+    print("⚠️  No USB microphone found, using system default")
+    return None
 
 
-def get_audio_device() -> int:
+def get_output_device() -> Optional[int]:
     """
-    Get the audio output device card number.
-
-    Strategy:
-    1. Auto-detect USB audio device
-    2. Fallback to card 1
-
-    Returns:
-        ALSA card number for audio output
+    Find the output (speaker) device index.
+    Looks for the first USB device with output channels.
+    Falls back to None (system default).
     """
-    device = detect_usb_audio_device()
-    if device is not None:
-        return device
+    for i, d in enumerate(sd.query_devices()):
+        if "USB" in d["name"].upper() and d["max_output_channels"] > 0:
+            print(f"🔊 Auto-detected USB speaker: [{i}] {d['name']}")
+            return i
 
-    # Final fallback
-    print("⚠️  Using fallback audio device: card 1")
-    return 1
+    print("⚠️  No USB speaker found, using system default")
+    return None
