@@ -6,8 +6,11 @@ from pathlib import Path
 from openai import OpenAI
 import os
 from typing import Optional
+import numpy as np
 import sounddevice as sd
 import soundfile as sf
+from math import gcd
+from scipy.signal import resample_poly
 from .audio_device import get_output_device
 
 
@@ -27,9 +30,14 @@ class TextToSpeech:
         print(f"🗣️  TTS initialized: {backend} backend, audio device {self.audio_device}")
 
     def _play_wav(self, path: Path) -> None:
-        """Play a WAV file through the configured output device."""
-        data, sample_rate = sf.read(str(path), dtype="float32")
-        sd.play(data, samplerate=sample_rate, device=self.audio_device)
+        """Play a WAV file through the configured output device, resampling if needed."""
+        data, file_sr = sf.read(str(path), dtype="float32")
+        device_info = sd.query_devices(self.audio_device) if self.audio_device is not None else sd.query_devices(kind="output")
+        device_sr = int(device_info["default_samplerate"])
+        if file_sr != device_sr:
+            g = gcd(file_sr, device_sr)
+            data = resample_poly(data, device_sr // g, file_sr // g).astype(np.float32)
+        sd.play(data, samplerate=device_sr, device=self.audio_device)
         sd.wait()
 
     def _speak_piper(self, text: str) -> None:
