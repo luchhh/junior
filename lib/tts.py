@@ -6,7 +6,12 @@ from pathlib import Path
 from openai import OpenAI
 import os
 from typing import Optional
-from .audio_device import get_audio_device
+import numpy as np
+import sounddevice as sd
+import soundfile as sf
+from math import gcd
+from scipy.signal import resample_poly
+from .audio_device import get_output_device
 
 
 PIPER_MODEL_PATH = os.path.expanduser("~/piper-voices/en_US-lessac-medium.onnx")
@@ -20,9 +25,20 @@ class TextToSpeech:
             raise ValueError(f"Unknown TTS backend: {backend}. Choose 'piper' or 'openai'")
 
         self.backend = backend
-        self.audio_device = get_audio_device()
+        self.audio_device = get_output_device()
         self._client = OpenAI(api_key=api_key) if backend == "openai" else None
         print(f"🗣️  TTS initialized: {backend} backend, audio device {self.audio_device}")
+
+    def _play_wav(self, path: Path) -> None:
+        """Play a WAV file through the configured output device, resampling if needed."""
+        data, file_sr = sf.read(str(path), dtype="float32")
+        device_info = sd.query_devices(self.audio_device) if self.audio_device is not None else sd.query_devices(kind="output")
+        device_sr = int(device_info["default_samplerate"])
+        if file_sr != device_sr:
+            g = gcd(file_sr, device_sr)
+            data = resample_poly(data, device_sr // g, file_sr // g).astype(np.float32)
+        sd.play(data, samplerate=device_sr, device=self.audio_device)
+        sd.wait()
 
     def _speak_piper(self, text: str) -> None:
         """Generate speech using local Piper TTS"""
@@ -47,11 +63,7 @@ class TextToSpeech:
 
             # Play audio
             play_start = datetime.now()
-            subprocess.run(
-                ["aplay", "-D", f"plughw:{self.audio_device},0", str(speech_file)],
-                check=True,
-                capture_output=True
-            )
+            self._play_wav(speech_file)
             play_end = datetime.now()
             play_time = (play_end - play_start).total_seconds()
             total_time = (play_end - gen_start).total_seconds()
@@ -73,16 +85,7 @@ class TextToSpeech:
 
             speech_file = Path("/tmp/robot_speech.wav")
             response.stream_to_file(speech_file)
-
-            # Play using aplay to specific device
-            subprocess.run(
-                ["aplay", "-D", f"plughw:{self.audio_device},0", str(speech_file)],
-                check=True,
-                capture_output=True
-            )
-        except subprocess.CalledProcessError as e:
-            print(f"❌ Audio playback error: {e}")
-            print(f"   stderr: {e.stderr.decode() if e.stderr else 'N/A'}")
+            self._play_wav(speech_file)
         except Exception as e:
             print(f"❌ OpenAI TTS error: {e}")
 
